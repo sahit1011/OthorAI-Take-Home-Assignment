@@ -5,6 +5,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
+# Import API routers
+from .api import upload
+
 # Create FastAPI app instance
 app = FastAPI(
     title="Othor AI - Mini AI Analyst as a Service",
@@ -22,6 +25,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include API routers
+app.include_router(upload.router)
 
 # Health check endpoint
 @app.get("/health")
