@@ -219,3 +219,120 @@ def test_data_processor_column_analysis():
     # Test high cardinality column
     hc_schema = data_processor.analyze_column(df['high_cardinality'], 'high_cardinality')
     assert hc_schema.is_high_cardinality
+
+
+def test_comprehensive_profiling(sample_csv_file):
+    """Test comprehensive data profiling"""
+    # First upload a file
+    upload_response = client.post(
+        "/upload/",
+        files={"file": ("test.csv", sample_csv_file, "text/csv")}
+    )
+
+    assert upload_response.status_code == 200
+    session_id = upload_response.json()["session_id"]
+
+    # Get comprehensive profile
+    profile_response = client.get(f"/profile/{session_id}")
+
+    assert profile_response.status_code == 200
+    data = profile_response.json()
+
+    # Check response structure
+    assert "session_id" in data
+    assert "dataset_info" in data
+    assert "column_profiles" in data
+    assert "correlations" in data
+    assert "data_quality" in data
+    assert "timestamp" in data
+
+    # Check dataset info
+    dataset_info = data["dataset_info"]
+    assert dataset_info["rows"] == 5
+    assert dataset_info["columns"] == 5
+
+    # Check column profiles
+    column_profiles = data["column_profiles"]
+    assert len(column_profiles) == 5
+
+    # Check numerical column profile
+    age_profile = column_profiles["age"]
+    assert age_profile["type"] == "numerical"
+    assert "mean" in age_profile
+    assert "std" in age_profile
+    assert "quartiles" in age_profile
+
+    # Check categorical column profile
+    dept_profile = column_profiles["department"]
+    assert dept_profile["type"] == "categorical"
+    assert "top_values" in dept_profile
+
+    # Check data quality
+    data_quality = data["data_quality"]
+    assert "completeness" in data_quality
+    assert "consistency" in data_quality
+
+    # Clean up
+    file_handler.cleanup_file(session_id)
+
+
+def test_correlations_endpoint(sample_csv_file):
+    """Test correlations endpoint"""
+    # First upload a file
+    upload_response = client.post(
+        "/upload/",
+        files={"file": ("test.csv", sample_csv_file, "text/csv")}
+    )
+
+    assert upload_response.status_code == 200
+    session_id = upload_response.json()["session_id"]
+
+    # Get correlations
+    corr_response = client.get(f"/profile/{session_id}/correlations")
+
+    assert corr_response.status_code == 200
+    data = corr_response.json()
+
+    assert "session_id" in data
+    assert "significant_correlations" in data
+    assert "correlation_matrix" in data
+    assert "numerical_columns" in data
+
+    # Clean up
+    file_handler.cleanup_file(session_id)
+
+
+def test_data_quality_endpoint(sample_csv_file):
+    """Test data quality endpoint"""
+    # First upload a file
+    upload_response = client.post(
+        "/upload/",
+        files={"file": ("test.csv", sample_csv_file, "text/csv")}
+    )
+
+    assert upload_response.status_code == 200
+    session_id = upload_response.json()["session_id"]
+
+    # Get data quality
+    quality_response = client.get(f"/profile/{session_id}/quality")
+
+    assert quality_response.status_code == 200
+    data = quality_response.json()
+
+    assert "session_id" in data
+    assert "data_quality" in data
+    assert "recommendations" in data
+
+    # Clean up
+    file_handler.cleanup_file(session_id)
+
+
+def test_profile_nonexistent_session():
+    """Test profiling with non-existent session"""
+    fake_session_id = "nonexistent-session-id"
+
+    response = client.get(f"/profile/{fake_session_id}")
+
+    assert response.status_code == 404
+    data = response.json()
+    assert data["detail"]["error"] == "SESSION_NOT_FOUND"

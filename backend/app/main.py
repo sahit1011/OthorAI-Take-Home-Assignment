@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Import API routers
-from .api import upload
+from .api import upload, profile
 
 # Create FastAPI app instance
 app = FastAPI(
@@ -28,6 +28,7 @@ app.add_middleware(
 
 # Include API routers
 app.include_router(upload.router)
+app.include_router(profile.router)
 
 # Health check endpoint
 @app.get("/health")

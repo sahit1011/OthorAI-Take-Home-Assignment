@@ -6,6 +6,8 @@ import numpy as np
 from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path
 import warnings
+from scipy import stats
+from sklearn.preprocessing import LabelEncoder
 warnings.filterwarnings('ignore')
 
 from ..models.upload import ColumnSchema
@@ -202,6 +204,206 @@ class DataProcessor:
                 "rows": 0,
                 "columns": 0
             }
+
+
+    def detect_outliers(self, series: pd.Series, method: str = "iqr") -> List[int]:
+        """Detect outliers in a numerical series"""
+        if not pd.api.types.is_numeric_dtype(series):
+            return []
+
+        clean_series = series.dropna()
+        if len(clean_series) < 4:  # Need at least 4 values for meaningful outlier detection
+            return []
+
+        outlier_indices = []
+
+        if method == "iqr":
+            Q1 = clean_series.quantile(0.25)
+            Q3 = clean_series.quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            outlier_mask = (series < lower_bound) | (series > upper_bound)
+            outlier_indices = series[outlier_mask].index.tolist()
+
+        elif method == "zscore":
+            z_scores = np.abs(stats.zscore(clean_series))
+            outlier_mask = z_scores > 3
+            outlier_indices = clean_series[outlier_mask].index.tolist()
+
+        return outlier_indices[:10]  # Return max 10 outlier indices
+
+    def calculate_skewness(self, series: pd.Series) -> Optional[float]:
+        """Calculate skewness for numerical columns"""
+        if not pd.api.types.is_numeric_dtype(series):
+            return None
+
+        clean_series = series.dropna()
+        if len(clean_series) < 3:
+            return None
+
+        try:
+            return float(stats.skew(clean_series))
+        except:
+            return None
+
+    def calculate_correlations(self, df: pd.DataFrame) -> Dict[str, float]:
+        """Calculate pairwise correlations between numerical columns"""
+        numerical_cols = df.select_dtypes(include=[np.number]).columns
+
+        if len(numerical_cols) < 2:
+            return {}
+
+        correlations = {}
+        corr_matrix = df[numerical_cols].corr()
+
+        # Get significant correlations (> 0.3 or < -0.3)
+        for i, col1 in enumerate(numerical_cols):
+            for j, col2 in enumerate(numerical_cols):
+                if i < j:  # Avoid duplicates and self-correlation
+                    corr_value = corr_matrix.loc[col1, col2]
+                    if not pd.isna(corr_value) and abs(corr_value) > 0.3:
+                        key = f"{col1}_{col2}"
+                        correlations[key] = round(float(corr_value), 3)
+
+        return correlations
+
+    def detect_data_leakage(self, df: pd.DataFrame, target_column: Optional[str] = None) -> List[str]:
+        """Detect potential data leakage issues"""
+        leakage_issues = []
+
+        if target_column and target_column in df.columns:
+            target_series = df[target_column]
+
+            for col in df.columns:
+                if col == target_column:
+                    continue
+
+                # Check for perfect correlation
+                if pd.api.types.is_numeric_dtype(df[col]) and pd.api.types.is_numeric_dtype(target_series):
+                    try:
+                        corr = df[col].corr(target_series)
+                        if not pd.isna(corr) and abs(corr) > 0.95:
+                            leakage_issues.append(f"High correlation between {col} and {target_column}: {corr:.3f}")
+                    except:
+                        pass
+
+                # Check for identical values
+                if df[col].equals(target_series):
+                    leakage_issues.append(f"Column {col} is identical to target {target_column}")
+
+        return leakage_issues
+
+    def assess_data_quality(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Assess overall data quality"""
+        total_cells = df.shape[0] * df.shape[1]
+        missing_cells = df.isnull().sum().sum()
+
+        # Calculate completeness
+        completeness = (total_cells - missing_cells) / total_cells if total_cells > 0 else 0
+
+        # Check for duplicate rows
+        duplicate_rows = df.duplicated().sum()
+
+        # Check for columns with all missing values
+        empty_columns = df.columns[df.isnull().all()].tolist()
+
+        # Check for columns with single unique value
+        constant_columns = []
+        for col in df.columns:
+            if df[col].nunique() <= 1:
+                constant_columns.append(col)
+
+        # Calculate consistency score (simplified)
+        consistency_issues = len(empty_columns) + len(constant_columns)
+        max_possible_issues = len(df.columns)
+        consistency = 1 - (consistency_issues / max_possible_issues) if max_possible_issues > 0 else 1
+
+        return {
+            "completeness": round(completeness, 3),
+            "consistency": round(consistency, 3),
+            "duplicate_rows": int(duplicate_rows),
+            "empty_columns": empty_columns,
+            "constant_columns": constant_columns,
+            "missing_cells": int(missing_cells),
+            "total_cells": int(total_cells)
+        }
+
+    def generate_comprehensive_profile(self, file_path: Path, target_column: Optional[str] = None) -> Dict[str, Any]:
+        """Generate comprehensive data profile"""
+        try:
+            # Load the dataset
+            df = pd.read_csv(file_path)
+
+            # Basic dataset info
+            dataset_info = {
+                "rows": len(df),
+                "columns": len(df.columns),
+                "memory_usage": f"{df.memory_usage(deep=True).sum() / 1024:.1f}KB",
+                "missing_values_total": int(df.isnull().sum().sum()),
+                "duplicate_rows": int(df.duplicated().sum())
+            }
+
+            # Detailed column profiles
+            column_profiles = {}
+            for column in df.columns:
+                series = df[column]
+
+                # Basic schema info
+                schema = self.analyze_column(series, column)
+
+                # Additional profiling for numerical columns
+                profile = {
+                    "type": schema.type,
+                    "count": int(series.count()),
+                    "unique": int(series.nunique()),
+                    "null_count": int(series.isnull().sum()),
+                    "null_percentage": schema.null_percentage,
+                    "is_high_cardinality": schema.is_high_cardinality,
+                    "is_constant": schema.is_constant,
+                    "sample_values": schema.sample_values
+                }
+
+                if schema.type == "numerical":
+                    profile.update({
+                        "mean": float(series.mean()) if not series.empty else None,
+                        "std": float(series.std()) if not series.empty else None,
+                        "min": float(series.min()) if not series.empty else None,
+                        "max": float(series.max()) if not series.empty else None,
+                        "quartiles": [float(q) for q in series.quantile([0.25, 0.5, 0.75]).tolist()] if not series.empty else [],
+                        "skewness": self.calculate_skewness(series),
+                        "outliers": self.detect_outliers(series)[:5]  # First 5 outlier indices
+                    })
+
+                elif schema.type == "categorical":
+                    value_counts = series.value_counts().head(10)
+                    profile.update({
+                        "top_values": {str(k): int(v) for k, v in value_counts.items()},
+                        "most_frequent": str(series.mode().iloc[0]) if not series.mode().empty else None,
+                        "frequency_of_top": int(value_counts.iloc[0]) if not value_counts.empty else 0
+                    })
+
+                column_profiles[column] = profile
+
+            # Correlations
+            correlations = self.calculate_correlations(df)
+
+            # Data quality assessment
+            data_quality = self.assess_data_quality(df)
+
+            # Data leakage detection
+            potential_leakage = self.detect_data_leakage(df, target_column)
+            data_quality["potential_leakage"] = potential_leakage
+
+            return {
+                "dataset_info": dataset_info,
+                "column_profiles": column_profiles,
+                "correlations": correlations,
+                "data_quality": data_quality
+            }
+
+        except Exception as e:
+            raise ValueError(f"Failed to generate comprehensive profile: {str(e)}")
 
 
 # Global data processor instance
