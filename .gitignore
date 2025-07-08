@@ -122,7 +122,8 @@ public
 next-env.d.ts
 
 # Logs
-logs/
+logs/*
+!logs/.gitkeep
 *.log
 
 # Runtime data
