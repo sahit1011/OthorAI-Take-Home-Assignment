@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - DEBUG=True
+      - API_HOST=0.0.0.0
+      - API_PORT=8001
+      - UPLOAD_DIR=/app/data/uploads
+      - MODEL_DIR=/app/data/models
+      - MAX_FILE_SIZE=52428800
+      - SESSION_TIMEOUT=86400
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - othor-ai-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8001
+      - NEXT_PUBLIC_API_TIMEOUT=30000
+      - NEXT_PUBLIC_MAX_FILE_SIZE=52428800
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - othor-ai-network
+
+  # Optional: Redis for background jobs (bonus feature)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - othor-ai-network
+    profiles:
+      - bonus
+
+  # Optional: PostgreSQL for data persistence (bonus feature)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: othor_ai
+      POSTGRES_USER: othor_user
+      POSTGRES_PASSWORD: othor_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U othor_user -d othor_ai"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - othor-ai-network
+    profiles:
+      - bonus
+
+volumes:
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+
+networks:
+  othor-ai-network:
+    driver: bridge
