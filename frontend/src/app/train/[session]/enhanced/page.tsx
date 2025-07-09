@@ -158,11 +158,13 @@ export default function EnhancedTrainPage({ params }: { params: Promise<{ sessio
 
     try {
       setLoadingRecommendations(true)
-      const response = await axios.get(
-        `${API_BASE_URL}/train/${resolvedParams.session}/model-recommendations?target_column=${selectedTarget}&problem_type=${problemType}`
+      const response = await apiService.getModelRecommendations(
+        resolvedParams.session,
+        selectedTarget,
+        problemType
       )
 
-      const recommendations = response.data.model_recommendations || []
+      const recommendations = response.model_recommendations || []
       // Ensure recommendations is an array
       const validRecommendations = Array.isArray(recommendations) ? recommendations : []
       setModelRecommendations(validRecommendations)
@@ -173,8 +175,8 @@ export default function EnhancedTrainPage({ params }: { params: Promise<{ sessio
       }
 
       // Update problem type if auto-detected
-      if (response.data.problem_type && response.data.problem_type !== 'auto') {
-        setProblemType(response.data.problem_type)
+      if (response.problem_type && response.problem_type !== 'auto') {
+        setProblemType(response.problem_type)
       }
 
       toast.success(`Found ${validRecommendations.length} model recommendations!`)
@@ -834,8 +836,7 @@ export default function EnhancedTrainPage({ params }: { params: Promise<{ sessio
                             onClick={async () => {
                               const loadingToast = toast.loading('Generating enhanced training summary...')
                               try {
-                                const response = await axios.get(`${API_BASE_URL}/summary/${trainingState.modelId}`)
-                                const data = response.data
+                                const data = await apiService.getModelSummary(trainingState.modelId!)
 
                                 setSummaryModal({
                                   isOpen: true,

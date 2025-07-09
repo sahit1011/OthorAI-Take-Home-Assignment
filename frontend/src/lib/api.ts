@@ -319,6 +319,23 @@ class ApiService {
     return response.data;
   }
 
+  // Get model recommendations
+  async getModelRecommendations(sessionId: string, targetColumn: string, problemType: string = 'auto') {
+    const response = await api.get(`/train/${sessionId}/model-recommendations`, {
+      params: {
+        target_column: targetColumn,
+        problem_type: problemType
+      }
+    });
+    return response.data;
+  }
+
+  // Get model summary
+  async getModelSummary(modelId: string) {
+    const response = await api.get(`/summary/${modelId}`);
+    return response.data;
+  }
+
   // Make predictions
   async makePredictions(request: { model_id: string; data: any[] }) {
     const response = await api.post('/predict/', request);
