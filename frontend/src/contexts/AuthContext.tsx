@@ -112,7 +112,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     apiService.logout()
     setToken(null)
     setUser(null)
+    // Clear all localStorage data to ensure clean logout
+    localStorage.clear()
     toast.success('Logged out successfully')
+    // Redirect to home page
+    window.location.href = '/'
   }
 
   const refreshUser = async () => {

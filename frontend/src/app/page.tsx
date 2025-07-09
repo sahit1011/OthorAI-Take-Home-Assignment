@@ -124,6 +124,7 @@ export default function Home() {
   const handleLogout = () => {
     logout()
   }
+
   return (
     <div className="min-h-screen">
 

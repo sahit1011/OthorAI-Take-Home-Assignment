@@ -75,6 +75,9 @@ export default function UploadPage() {
       const result = await apiService.uploadFile(file, (progress) => {
         setUploadProgress(progress)
       })
+
+      console.log('Upload result:', result) // Debug log
+
       setUploadResult({
         filename: result.filename,
         size: result.file_size,
@@ -86,10 +89,6 @@ export default function UploadPage() {
       })
 
       toast.success('File uploaded successfully!')
-
-      // Don't auto-redirect, let user choose next action
-      // Store session ID for user to manually navigate
-      setUploadResult(result)
 
     } catch (error: any) {
       console.error('Upload error:', error)

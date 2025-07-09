@@ -2,11 +2,14 @@
 History API endpoints for retrieving user's file upload and model training history.
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import logging
+import os
+from pathlib import Path
 
 from ..database.models import User, FileMetadata, ModelMetadata
 from ..database.database import get_db
@@ -296,6 +299,80 @@ async def get_model_details(
             detail={
                 "error": "MODEL_DETAILS_ERROR",
                 "message": "Failed to retrieve model details",
+                "details": str(e)
+            }
+        )
+
+
+@router.get("/models/{model_id}/download")
+async def download_model(
+    model_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Download a trained model file.
+
+    **Parameters:**
+    - model_id: ID of the trained model to download
+
+    **Returns:**
+    - Model file as a downloadable attachment
+    """
+    try:
+        # Verify model ownership
+        model = db.query(ModelMetadata).filter(
+            ModelMetadata.model_id == model_id,
+            ModelMetadata.user_id == current_user.id
+        ).first()
+
+        if not model:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "MODEL_NOT_FOUND",
+                    "message": f"Model with ID {model_id} not found or access denied"
+                }
+            )
+
+        # Check if model file exists
+        model_path = Path(model.model_path)
+        if not model_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "MODEL_FILE_NOT_FOUND",
+                    "message": f"Model file not found on disk: {model.model_path}"
+                }
+            )
+
+        # Generate a user-friendly filename
+        safe_algorithm = model.algorithm.replace(" ", "_").lower()
+        safe_target = model.target_column.replace(" ", "_").lower()
+        filename = f"{safe_algorithm}_{safe_target}_model_{model_id[:8]}.joblib"
+
+        logger.info(f"User {current_user.username} downloading model {model_id}")
+
+        # Return file as download
+        return FileResponse(
+            path=str(model_path),
+            filename=filename,
+            media_type='application/octet-stream',
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Content-Description": f"ML Model - {model.algorithm} for {model.target_column}"
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading model {model_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "MODEL_DOWNLOAD_ERROR",
+                "message": "Failed to download model file",
                 "details": str(e)
             }
         )
