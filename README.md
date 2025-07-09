@@ -33,14 +33,40 @@ A full-stack application that allows users to upload CSV files, automatically an
 ### Prerequisites
 - **Git** (for cloning the repository)
 - **Docker & Docker Compose** (for containerized deployment)
-- **Python 3.9+** (for local development)
-- **Node.js 16+** (for local development)
 
-### Option 1: Docker Deployment (Recommended for Recruiters)
+### 🐳 Docker Deployment (Recommended for Recruiters)
+
+**The easiest way to run the application - no need to install Python, Node.js, or manage dependencies!**
+
+#### For Windows Users:
 ```bash
 # Clone the repository
 git clone https://github.com/sahit1011/OthorAI-Take-Home-Assignment.git
 cd OthorAI-Take-Home-Assignment
+
+# Run the startup script
+start-docker.bat
+```
+
+#### For Mac/Linux Users:
+```bash
+# Clone the repository
+git clone https://github.com/sahit1011/OthorAI-Take-Home-Assignment.git
+cd OthorAI-Take-Home-Assignment
+
+# Make the script executable and run it
+chmod +x start-docker.sh
+./start-docker.sh
+```
+
+#### Manual Docker Commands:
+```bash
+# Clone the repository
+git clone https://github.com/sahit1011/OthorAI-Take-Home-Assignment.git
+cd OthorAI-Take-Home-Assignment
+
+# Create required directories
+mkdir -p data/uploads data/models logs
 
 # Start all services with Docker
 docker-compose up --build
@@ -51,7 +77,10 @@ docker-compose up --build
 # API Docs: http://localhost:8001/docs
 ```
 
-### Option 2: Local Development Setup
+### 💻 Local Development Setup (For Developers)
+
+**Prerequisites:** Python 3.9+, Node.js 16+
+
 ```bash
 # Clone the repository
 git clone https://github.com/sahit1011/OthorAI-Take-Home-Assignment.git

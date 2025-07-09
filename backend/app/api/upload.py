@@ -1,15 +1,20 @@
 """
 File upload API endpoints
 """
-from fastapi import APIRouter, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends
 from fastapi.responses import JSONResponse
 from datetime import datetime
 from typing import Dict, Any
 import logging
+import os
+from sqlalchemy.orm import Session
 
 from ..models.upload import UploadResponse, UploadError, FileValidationError
 from ..core.file_handler import file_handler
 from ..core.data_processor import data_processor
+from ..auth.dependencies import get_current_user
+from ..database.models import User, FileMetadata
+from ..database.database import get_db
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -20,7 +25,9 @@ router = APIRouter(prefix="/upload", tags=["File Upload"])
 
 @router.post("/", response_model=UploadResponse)
 async def upload_csv_file(
-    file: UploadFile = File(..., description="CSV file to upload (max 50MB)")
+    file: UploadFile = File(..., description="CSV file to upload (max 50MB)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ) -> UploadResponse:
     """
     Upload a CSV file for analysis and processing.
@@ -80,7 +87,35 @@ async def upload_csv_file(
         # Infer schema
         schema = data_processor.infer_schema(file_path)
         logger.info(f"Schema inference completed for session {session_id}")
-        
+
+        # Save file metadata to database
+        try:
+            file_metadata = FileMetadata(
+                session_id=session_id,
+                filename=f"{session_id}_{file.filename}",
+                original_filename=file.filename,
+                file_size=file_info["file_size"],
+                file_path=str(file_path),
+                content_type=file.content_type or "text/csv",
+                num_rows=dataset_info["rows"],
+                num_columns=dataset_info["columns"],
+                column_names=list(schema.keys()),
+                column_types={col: getattr(info, 'type', str(info)) if hasattr(info, 'type') else info.get('type', str(info)) for col, info in schema.items()},
+                user_id=current_user.id,
+                processed_at=datetime.now(),
+                status="processed"
+            )
+
+            db.add(file_metadata)
+            db.commit()
+            db.refresh(file_metadata)
+            logger.info(f"File metadata saved to database for session {session_id}")
+
+        except Exception as db_error:
+            logger.error(f"Failed to save file metadata for session {session_id}: {str(db_error)}")
+            db.rollback()
+            # Continue with response even if database save fails
+
         # Create response
         response = UploadResponse(
             session_id=session_id,
@@ -92,7 +127,7 @@ async def upload_csv_file(
             data_schema=schema,
             message="File uploaded and processed successfully"
         )
-        
+
         logger.info(f"Upload completed successfully for session {session_id}")
         return response
         
@@ -169,7 +204,11 @@ async def get_upload_info(session_id: str) -> Dict[str, Any]:
 
 
 @router.delete("/session/{session_id}")
-async def cleanup_upload_session(session_id: str) -> Dict[str, str]:
+async def cleanup_upload_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Dict[str, str]:
     """
     Clean up an upload session and delete associated files.
     
@@ -180,8 +219,33 @@ async def cleanup_upload_session(session_id: str) -> Dict[str, str]:
     - Confirmation message
     """
     try:
+        # Check if user owns this file
+        file_metadata = db.query(FileMetadata).filter(
+            FileMetadata.session_id == session_id,
+            FileMetadata.user_id == current_user.id
+        ).first()
+
+        if not file_metadata:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "SESSION_NOT_FOUND",
+                    "message": f"No file found for session ID: {session_id} or access denied"
+                }
+            )
+
+        # Clean up physical file
         success = file_handler.cleanup_file(session_id)
-        
+
+        # Remove database record
+        try:
+            db.delete(file_metadata)
+            db.commit()
+            logger.info(f"File metadata removed from database for session {session_id}")
+        except Exception as db_error:
+            logger.error(f"Failed to remove file metadata for session {session_id}: {str(db_error)}")
+            db.rollback()
+
         if success:
             logger.info(f"Session {session_id} cleaned up successfully")
             return {
@@ -189,13 +253,11 @@ async def cleanup_upload_session(session_id: str) -> Dict[str, str]:
                 "session_id": session_id
             }
         else:
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "error": "SESSION_NOT_FOUND",
-                    "message": f"No file found for session ID: {session_id}"
-                }
-            )
+            # Even if file cleanup failed, we removed the database record
+            return {
+                "message": f"Session {session_id} database record removed (file may have been already deleted)",
+                "session_id": session_id
+            }
             
     except HTTPException:
         raise

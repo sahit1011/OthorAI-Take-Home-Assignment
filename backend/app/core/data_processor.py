@@ -6,9 +6,15 @@ import numpy as np
 from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path
 import warnings
+import logging
 from scipy import stats
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, StandardScaler, MinMaxScaler, OneHotEncoder
+from sklearn.impute import SimpleImputer
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 warnings.filterwarnings('ignore')
+
+logger = logging.getLogger(__name__)
 
 from ..models.upload import ColumnSchema
 
@@ -21,6 +27,15 @@ class DataProcessor:
         self.constant_threshold = 0.95  # 95% same values
         self.sample_size = 5  # Number of sample values to return
     
+    def load_data(self, file_path: Path) -> pd.DataFrame:
+        """Load the complete CSV file for analysis"""
+        try:
+            df = pd.read_csv(file_path)
+            return df
+        except Exception as e:
+            logger.error(f"Error loading CSV file {file_path}: {str(e)}")
+            raise ValueError(f"Failed to load CSV file: {str(e)}")
+
     def load_csv_sample(self, file_path: Path, sample_rows: int = 1000) -> pd.DataFrame:
         """Load a sample of the CSV file for analysis"""
         try:
@@ -29,7 +44,285 @@ class DataProcessor:
             return df_sample
         except Exception as e:
             raise ValueError(f"Failed to read CSV file: {str(e)}")
+
+    def _analyze_missing_patterns(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze missing data patterns"""
+        missing_patterns = {}
+
+        # Columns with no missing values
+        complete_columns = df.columns[df.isnull().sum() == 0].tolist()
+
+        # Columns with all missing values
+        empty_columns = df.columns[df.isnull().sum() == len(df)].tolist()
+
+        # Missing value patterns
+        missing_combinations = df.isnull().value_counts().head(10).to_dict()
+
+        return {
+            'complete_columns': complete_columns,
+            'empty_columns': empty_columns,
+            'missing_combinations': {str(k): v for k, v in missing_combinations.items()}
+        }
+
+    def _detect_outliers(self, numeric_df: pd.DataFrame) -> Dict[str, Any]:
+        """Detect outliers using IQR method"""
+        outliers = {}
+
+        for col in numeric_df.columns:
+            Q1 = numeric_df[col].quantile(0.25)
+            Q3 = numeric_df[col].quantile(0.75)
+            IQR = Q3 - Q1
+
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+
+            outlier_mask = (numeric_df[col] < lower_bound) | (numeric_df[col] > upper_bound)
+            outlier_values = numeric_df[col][outlier_mask].tolist()
+
+            outliers[col] = {
+                'count': len(outlier_values),
+                'percentage': (len(outlier_values) / len(numeric_df)) * 100,
+                'lower_bound': lower_bound,
+                'upper_bound': upper_bound,
+                'outlier_values': outlier_values[:20]  # Limit to first 20 outliers
+            }
+
+        return outliers
+
+    def _assess_data_quality(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Assess overall data quality"""
+
+        # Completeness score
+        completeness = ((df.shape[0] * df.shape[1] - df.isnull().sum().sum()) /
+                       (df.shape[0] * df.shape[1])) * 100
+
+        # Uniqueness score (based on duplicate rows)
+        uniqueness = ((len(df) - df.duplicated().sum()) / len(df)) * 100
+
+        # Consistency score (based on data types and formats)
+        consistency_issues = 0
+        for col in df.columns:
+            if df[col].dtype == 'object':
+                # Check for mixed types or inconsistent formats
+                sample_values = df[col].dropna().head(100)
+                if len(sample_values) > 0:
+                    # Simple check for mixed numeric/text
+                    numeric_count = sum(1 for val in sample_values if str(val).replace('.', '').replace('-', '').isdigit())
+                    if 0 < numeric_count < len(sample_values):
+                        consistency_issues += 1
+
+        consistency = max(0, 100 - (consistency_issues / len(df.columns)) * 100)
+
+        # Validity score (based on outliers and data ranges)
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        validity_issues = 0
+
+        for col in numeric_cols:
+            Q1 = df[col].quantile(0.25)
+            Q3 = df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            outliers = df[(df[col] < Q1 - 1.5 * IQR) | (df[col] > Q3 + 1.5 * IQR)]
+            if len(outliers) > len(df) * 0.1:  # More than 10% outliers
+                validity_issues += 1
+
+        validity = max(0, 100 - (validity_issues / max(1, len(numeric_cols))) * 50)
+
+        # Overall quality score
+        overall_quality = (completeness * 0.3 + uniqueness * 0.2 +
+                          consistency * 0.3 + validity * 0.2)
+
+        return {
+            'completeness': completeness,
+            'uniqueness': uniqueness,
+            'consistency': consistency,
+            'validity': validity,
+            'overall_quality': overall_quality,
+            'quality_grade': self._get_quality_grade(overall_quality)
+        }
+
+    def _get_quality_grade(self, score: float) -> str:
+        """Get quality grade based on score"""
+        if score >= 90:
+            return 'Excellent'
+        elif score >= 75:
+            return 'Good'
+        elif score >= 60:
+            return 'Fair'
+        else:
+            return 'Poor'
+
+    def _analyze_distributions(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze data distributions"""
+        distributions = {}
+
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+
+        for col in numeric_cols:
+            col_data = df[col].dropna()
+            if len(col_data) > 0:
+                # Basic distribution stats
+                distributions[col] = {
+                    'mean': float(col_data.mean()),
+                    'median': float(col_data.median()),
+                    'std': float(col_data.std()),
+                    'min': float(col_data.min()),
+                    'max': float(col_data.max()),
+                    'skewness': float(col_data.skew()),
+                    'kurtosis': float(col_data.kurtosis()),
+                    'quartiles': {
+                        'q1': float(col_data.quantile(0.25)),
+                        'q2': float(col_data.quantile(0.5)),
+                        'q3': float(col_data.quantile(0.75))
+                    },
+                    'histogram_data': self._get_histogram_data(col_data),
+                    'normality_test': self._test_normality(col_data)
+                }
+
+        return distributions
+
+    def _get_histogram_data(self, data: pd.Series, bins: int = 20) -> Dict[str, Any]:
+        """Get histogram data for visualization"""
+        counts, bin_edges = np.histogram(data, bins=bins)
+
+        return {
+            'counts': counts.tolist(),
+            'bin_edges': bin_edges.tolist(),
+            'bin_centers': [(bin_edges[i] + bin_edges[i+1]) / 2 for i in range(len(bin_edges)-1)]
+        }
+
+    def _test_normality(self, data: pd.Series) -> Dict[str, Any]:
+        """Test for normality using Shapiro-Wilk test"""
+        if len(data) < 3:
+            return {'is_normal': False, 'p_value': None, 'test': 'insufficient_data'}
+
+        # Use sample for large datasets
+        sample_data = data.sample(min(5000, len(data))) if len(data) > 5000 else data
+
+        try:
+            statistic, p_value = stats.shapiro(sample_data)
+            return {
+                'is_normal': p_value > 0.05,
+                'p_value': float(p_value),
+                'statistic': float(statistic),
+                'test': 'shapiro_wilk'
+            }
+        except:
+            return {'is_normal': False, 'p_value': None, 'test': 'failed'}
     
+    def get_comprehensive_analysis(self, file_path: Path) -> Dict[str, Any]:
+        """Get comprehensive statistical analysis of the dataset"""
+        try:
+            # Read the full dataset
+            df = pd.read_csv(file_path)
+
+            # Basic dataset info
+            dataset_info = {
+                'shape': [int(df.shape[0]), int(df.shape[1])],
+                'rows': int(len(df)),
+                'columns': int(len(df.columns)),
+                'memory_usage': f"{df.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB",
+                'file_size': f"{file_path.stat().st_size / 1024 / 1024:.2f} MB"
+            }
+
+            # Data types analysis
+            dtypes_info = {
+                'numeric_columns': df.select_dtypes(include=[np.number]).columns.tolist(),
+                'categorical_columns': df.select_dtypes(include=['object']).columns.tolist(),
+                'datetime_columns': df.select_dtypes(include=['datetime64']).columns.tolist(),
+                'boolean_columns': df.select_dtypes(include=['bool']).columns.tolist()
+            }
+
+            # Missing values analysis
+            missing_cols_dict = df.isnull().sum()[df.isnull().sum() > 0].to_dict()
+            missing_cols_converted = {}
+            for col, count in missing_cols_dict.items():
+                missing_cols_converted[str(col)] = int(count)
+
+            missing_analysis = {
+                'total_missing': int(df.isnull().sum().sum()),
+                'missing_percentage': float((df.isnull().sum().sum() / (df.shape[0] * df.shape[1])) * 100),
+                'columns_with_missing': missing_cols_converted,
+                'missing_patterns': self._analyze_missing_patterns(df)
+            }
+
+            # Duplicate analysis
+            duplicate_analysis = {
+                'duplicate_rows': int(df.duplicated().sum()),
+                'duplicate_percentage': float((df.duplicated().sum() / len(df)) * 100),
+                'unique_rows': int(len(df.drop_duplicates()))
+            }
+
+            # Statistical summary for numeric columns
+            numeric_summary = {}
+            if dtypes_info['numeric_columns']:
+                numeric_df = df[dtypes_info['numeric_columns']]
+                # Convert numpy types to native Python types for JSON serialization
+                describe_dict = numeric_df.describe().to_dict()
+                for col in describe_dict:
+                    for stat in describe_dict[col]:
+                        describe_dict[col][stat] = float(describe_dict[col][stat])
+
+                corr_dict = numeric_df.corr().to_dict()
+                for col in corr_dict:
+                    for col2 in corr_dict[col]:
+                        if pd.notna(corr_dict[col][col2]):
+                            corr_dict[col][col2] = float(corr_dict[col][col2])
+                        else:
+                            corr_dict[col][col2] = None
+
+                skew_dict = numeric_df.skew().to_dict()
+                for col in skew_dict:
+                    skew_dict[col] = float(skew_dict[col])
+
+                kurt_dict = numeric_df.kurtosis().to_dict()
+                for col in kurt_dict:
+                    kurt_dict[col] = float(kurt_dict[col])
+
+                numeric_summary = {
+                    'describe': describe_dict,
+                    'correlation_matrix': corr_dict,
+                    'skewness': skew_dict,
+                    'kurtosis': kurt_dict,
+                    'outliers': self._detect_outliers(numeric_df)
+                }
+
+            # Categorical analysis
+            categorical_summary = {}
+            if dtypes_info['categorical_columns']:
+                for col in dtypes_info['categorical_columns']:
+                    top_values_dict = df[col].value_counts().head(10).to_dict()
+                    # Convert numpy types to native Python types
+                    top_values_converted = {}
+                    for key, value in top_values_dict.items():
+                        top_values_converted[str(key)] = int(value)
+
+                    categorical_summary[col] = {
+                        'unique_count': int(df[col].nunique()),
+                        'unique_percentage': float((df[col].nunique() / len(df)) * 100),
+                        'top_values': top_values_converted,
+                        'mode': str(df[col].mode().iloc[0]) if not df[col].mode().empty else None
+                    }
+
+            # Data quality assessment
+            quality_assessment = self._assess_data_quality(df)
+
+            # Distribution analysis
+            distribution_analysis = self._analyze_distributions(df)
+
+            return {
+                'dataset_info': dataset_info,
+                'dtypes_info': dtypes_info,
+                'missing_analysis': missing_analysis,
+                'duplicate_analysis': duplicate_analysis,
+                'numeric_summary': numeric_summary,
+                'categorical_summary': categorical_summary,
+                'quality_assessment': quality_assessment,
+                'distribution_analysis': distribution_analysis
+            }
+
+        except Exception as e:
+            raise ValueError(f"Failed to analyze dataset: {str(e)}")
+
     def get_dataset_info(self, file_path: Path) -> Dict[str, Any]:
         """Get basic dataset information"""
         try:
@@ -404,6 +697,120 @@ class DataProcessor:
 
         except Exception as e:
             raise ValueError(f"Failed to generate comprehensive profile: {str(e)}")
+
+    def detect_target_column(self, df: pd.DataFrame, target_hint: Optional[str] = None) -> Optional[str]:
+        """Detect the target column in the dataset"""
+        if target_hint and target_hint in df.columns:
+            return target_hint
+
+        # Common target column names
+        target_names = ['target', 'label', 'class', 'y', 'output', 'prediction', 'result']
+
+        for col in df.columns:
+            if col.lower() in target_names:
+                return col
+
+        # If no obvious target found, return None
+        return None
+
+    def infer_problem_type(self, target_series: pd.Series) -> str:
+        """Infer whether this is a classification or regression problem"""
+        # Remove null values
+        clean_target = target_series.dropna()
+
+        if len(clean_target) == 0:
+            return "unknown"
+
+        # Check if target is numeric
+        if pd.api.types.is_numeric_dtype(clean_target):
+            # Check if all values are integers and limited unique values
+            unique_values = clean_target.nunique()
+            total_values = len(clean_target)
+
+            # If less than 10 unique values or less than 5% unique values, likely classification
+            if unique_values <= 10 or (unique_values / total_values) < 0.05:
+                return "classification"
+            else:
+                return "regression"
+        else:
+            # Non-numeric target is classification
+            return "classification"
+
+    def prepare_features_and_target(self, df: pd.DataFrame, target_column: str) -> Tuple[pd.DataFrame, pd.Series]:
+        """Separate features and target"""
+        if target_column not in df.columns:
+            raise ValueError(f"Target column '{target_column}' not found in dataset")
+
+        # Separate features and target
+        X = df.drop(columns=[target_column])
+        y = df[target_column]
+
+        return X, y
+
+    def create_preprocessing_pipeline(self, X: pd.DataFrame) -> ColumnTransformer:
+        """Create preprocessing pipeline based on column types"""
+        # Identify column types
+        numerical_cols = X.select_dtypes(include=['int64', 'float64']).columns.tolist()
+        categorical_cols = X.select_dtypes(include=['object', 'category']).columns.tolist()
+
+        # Remove high cardinality categorical columns (>50 unique values)
+        filtered_categorical_cols = []
+        for col in categorical_cols:
+            if X[col].nunique() <= 50:  # Reasonable threshold for one-hot encoding
+                filtered_categorical_cols.append(col)
+
+        # Create preprocessing steps
+        preprocessors = []
+
+        # Numerical preprocessing
+        if numerical_cols:
+            numerical_pipeline = Pipeline([
+                ('imputer', SimpleImputer(strategy='median')),
+                ('scaler', StandardScaler())
+            ])
+            preprocessors.append(('num', numerical_pipeline, numerical_cols))
+
+        # Categorical preprocessing
+        if filtered_categorical_cols:
+            categorical_pipeline = Pipeline([
+                ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
+                ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
+            ])
+            preprocessors.append(('cat', categorical_pipeline, filtered_categorical_cols))
+
+        # Create column transformer
+        if preprocessors:
+            return ColumnTransformer(
+                transformers=preprocessors,
+                remainder='drop'  # Drop columns not specified
+            )
+        else:
+            # If no valid columns, return a simple transformer
+            return ColumnTransformer(
+                transformers=[('passthrough', 'passthrough', [])],
+                remainder='drop'
+            )
+
+    def get_feature_names_after_preprocessing(self, preprocessor: ColumnTransformer, X: pd.DataFrame) -> List[str]:
+        """Get feature names after preprocessing"""
+        feature_names = []
+
+        for name, transformer, columns in preprocessor.transformers_:
+            if name == 'num':
+                feature_names.extend(columns)
+            elif name == 'cat':
+                if hasattr(transformer.named_steps['onehot'], 'get_feature_names_out'):
+                    # For newer sklearn versions
+                    cat_features = transformer.named_steps['onehot'].get_feature_names_out(columns)
+                    feature_names.extend(cat_features)
+                else:
+                    # Fallback for older versions
+                    for col in columns:
+                        unique_values = X[col].unique()
+                        for val in unique_values:
+                            feature_names.append(f"{col}_{val}")
+
+        return feature_names
 
 
 # Global data processor instance

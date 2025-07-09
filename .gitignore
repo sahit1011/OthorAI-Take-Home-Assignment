@@ -139,6 +139,15 @@ data/models/*
 !data/models/.gitkeep
 !data/samples/
 
+# Backend data directories
+backend/data/uploads/*
+backend/data/models/*
+backend/data/*.db
+backend/data/*.sqlite
+backend/data/*.sqlite3
+!backend/data/uploads/.gitkeep
+!backend/data/models/.gitkeep
+
 # Temporary and cache files
 *.tmp
 *.temp
