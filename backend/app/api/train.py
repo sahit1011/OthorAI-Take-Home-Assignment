@@ -327,6 +327,64 @@ async def enhanced_train_model(
 
         logger.info(f"Enhanced model training completed successfully. Model ID: {training_result['model_id']}")
 
+        # Save model metadata to database (same as regular training endpoint)
+        try:
+            # Get file metadata for foreign key relationship
+            file_metadata = db.query(FileMetadata).filter(
+                FileMetadata.session_id == session_id,
+                FileMetadata.user_id == current_user.id
+            ).first()
+
+            if not file_metadata:
+                logger.warning(f"File metadata not found for session {session_id}, skipping database save")
+            else:
+                # Calculate model file size
+                model_file_size = None
+                if os.path.exists(training_result["model_path"]):
+                    model_file_size = os.path.getsize(training_result["model_path"])
+
+                # Calculate training duration (approximate)
+                training_duration = None  # Could be calculated if needed
+
+                model_metadata = ModelMetadata(
+                    model_id=training_result["model_id"],
+                    model_name=f"enhanced_{algorithm}_{request.target_column}",
+                    algorithm=training_result["algorithm"],
+                    model_type=training_result["model_type"],
+                    target_column=request.target_column,
+                    test_size=0.2,
+                    random_state=42,
+                    training_parameters={
+                        "algorithm": algorithm,
+                        "model_type": problem_type,
+                        "test_size": 0.2,
+                        "random_state": 42,
+                        "enhanced_training": True
+                    },
+                    evaluation_metrics=training_result["evaluation_metrics"],
+                    feature_importance=training_result["feature_importance"],
+                    model_path=training_result["model_path"],
+                    model_size=model_file_size,
+                    training_duration=training_duration,
+                    num_features=training_result["training_info"].get("features_count"),
+                    num_training_samples=training_result["training_info"].get("training_samples"),
+                    num_test_samples=training_result["training_info"].get("test_samples"),
+                    user_id=current_user.id,
+                    file_id=file_metadata.id,
+                    trained_at=datetime.now(),
+                    status="completed"
+                )
+
+                db.add(model_metadata)
+                db.commit()
+                db.refresh(model_metadata)
+                logger.info(f"Enhanced model metadata saved to database for model {training_result['model_id']}")
+
+        except Exception as db_error:
+            logger.error(f"Failed to save enhanced model metadata for model {training_result['model_id']}: {str(db_error)}")
+            db.rollback()
+            # Continue with response even if database save fails
+
         # Create response
         response = TrainResponse(
             model_id=training_result["model_id"],
