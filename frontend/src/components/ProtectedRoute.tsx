@@ -18,12 +18,13 @@ export default function ProtectedRoute({ children, requireAdmin = false }: Prote
   useEffect(() => {
     if (!isLoading) {
       if (!isAuthenticated) {
-        router.push('/login')
+        // Immediate redirect without showing access denied screen
+        router.replace('/login')
         return
       }
 
       if (requireAdmin && user && !user.is_admin) {
-        router.push('/')
+        router.replace('/')
         return
       }
     }
@@ -48,23 +49,9 @@ export default function ProtectedRoute({ children, requireAdmin = false }: Prote
     )
   }
 
+  // If not authenticated, don't render anything - redirect will happen in useEffect
   if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5 }}
-          className="text-center"
-        >
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-r from-red-500 to-orange-500 mb-4">
-            <SparklesIcon className="w-8 h-8 text-white" />
-          </div>
-          <h2 className="text-xl font-semibold text-white mb-2">Access Denied</h2>
-          <p className="text-gray-400">Redirecting to login...</p>
-        </motion.div>
-      </div>
-    )
+    return null
   }
 
   if (requireAdmin && user && !user.is_admin) {

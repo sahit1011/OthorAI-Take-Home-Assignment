@@ -628,8 +628,7 @@ export default function ProfilePage({ params }: { params: Promise<{ session: str
                     onClick={async () => {
                       const loadingToast = toast.loading('Generating dataset summary...')
                       try {
-                        const response = await axios.get(`${API_BASE_URL}/summary/session/${resolvedParams.session}`)
-                        const data = response.data
+                        const data = await apiService.getSessionSummary(resolvedParams.session)
 
                         setSummaryModal({
                           isOpen: true,

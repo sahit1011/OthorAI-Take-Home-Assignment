@@ -678,8 +678,7 @@ export default function TrainPage({ params }: { params: Promise<{ session: strin
                             onClick={async () => {
                               const loadingToast = toast.loading('Generating training summary...')
                               try {
-                                const response = await axios.get(`${API_BASE_URL}/summary/${trainingState.modelId}`)
-                                const data = response.data
+                                const data = await apiService.getModelSummary(trainingState.modelId!)
 
                                 setSummaryModal({
                                   isOpen: true,

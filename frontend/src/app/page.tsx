@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAuth } from "@/contexts/AuthContext"
+import { useAuthRedirect } from "@/hooks/useAuthRedirect"
 import {
   CloudArrowUpIcon,
   ChartBarIcon,
@@ -114,6 +115,7 @@ const quickActions = [
 export default function Home() {
   const [showRecentActivity, setShowRecentActivity] = useState(false)
   const { isAuthenticated, user, logout } = useAuth()
+  const { handleAuthRedirect } = useAuthRedirect()
 
   useEffect(() => {
     // Show recent activity after initial animations
@@ -144,11 +146,13 @@ export default function Home() {
               No coding required.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-              <Button asChild size="xl" className="group">
-                <Link href="/upload">
-                  Get Started Free
-                  <ArrowRightIcon className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-                </Link>
+              <Button
+                size="xl"
+                className="group"
+                onClick={() => handleAuthRedirect('/upload')}
+              >
+                Get Started Free
+                <ArrowRightIcon className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
               </Button>
               <Button variant="outline" size="xl" className="border-purple-400 text-purple-300 hover:bg-purple-400 hover:text-white">
                 Watch Demo
@@ -432,11 +436,13 @@ export default function Home() {
             <p className="text-xl text-purple-200 mb-8">
               Join thousands of data professionals who trust Othor AI for their analytics needs
             </p>
-            <Button asChild size="xl" className="group">
-              <Link href="/upload">
-                Start Your Free Analysis
-                <ArrowRightIcon className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-              </Link>
+            <Button
+              size="xl"
+              className="group"
+              onClick={() => handleAuthRedirect('/upload')}
+            >
+              Start Your Free Analysis
+              <ArrowRightIcon className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
             </Button>
           </motion.div>
         </div>

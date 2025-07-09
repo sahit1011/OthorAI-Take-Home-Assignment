@@ -41,7 +41,7 @@ import {
   DocumentTextIcon,
   CalculatorIcon
 } from "@heroicons/react/24/outline"
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import { apiService } from "@/lib/api"
 
 interface ComprehensiveAnalysisProps {
@@ -547,35 +547,481 @@ export function ComprehensiveDataAnalysis({ sessionId }: ComprehensiveAnalysisPr
             </div>
           </TabsContent>
 
-          {/* Add placeholder for other tabs */}
-          <TabsContent value="distributions">
-            <Card className="glass">
-              <CardContent className="p-6 text-center">
-                <CalculatorIcon className="w-12 h-12 text-purple-400 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-white mb-2">Distribution Analysis</h3>
-                <p className="text-purple-200">Coming soon - Statistical distribution analysis</p>
-              </CardContent>
-            </Card>
+          {/* Distribution Analysis Tab */}
+          <TabsContent value="distributions" className="space-y-6">
+            {Object.keys(analysisData.distribution_analysis).length > 0 ? (
+              <div className="grid gap-6">
+                {Object.entries(analysisData.distribution_analysis).map(([column, distData]) => (
+                  <Card key={column} className="glass">
+                    <CardHeader>
+                      <CardTitle className="text-white flex items-center">
+                        <ChartBarIcon className="w-5 h-5 mr-2" />
+                        {column} - Distribution Analysis
+                      </CardTitle>
+                      <CardDescription className="text-purple-200">
+                        Statistical distribution and normality analysis
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid lg:grid-cols-2 gap-6">
+                        {/* Histogram */}
+                        <div>
+                          <h4 className="text-white font-medium mb-3">Distribution Histogram</h4>
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={distData.histogram_data.bin_centers.map((center, idx) => ({
+                                bin: center.toFixed(2),
+                                count: distData.histogram_data.counts[idx],
+                                frequency: ((distData.histogram_data.counts[idx] / distData.histogram_data.counts.reduce((a, b) => a + b, 0)) * 100).toFixed(1)
+                              }))}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                                <XAxis
+                                  dataKey="bin"
+                                  stroke="#e2e8f0"
+                                  fontSize={12}
+                                  angle={-45}
+                                  textAnchor="end"
+                                  height={60}
+                                />
+                                <YAxis stroke="#e2e8f0" fontSize={12} />
+                                <Tooltip
+                                  contentStyle={{
+                                    backgroundColor: 'rgba(0,0,0,0.8)',
+                                    border: '1px solid rgba(139,92,246,0.3)',
+                                    borderRadius: '8px',
+                                    color: 'white'
+                                  }}
+                                  formatter={(value, name) => [
+                                    name === 'count' ? `${value} values` : `${value}%`,
+                                    name === 'count' ? 'Count' : 'Frequency'
+                                  ]}
+                                />
+                                <Bar dataKey="count" fill={COLORS.charts[0]} radius={[2, 2, 0, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* Statistical Summary */}
+                        <div>
+                          <h4 className="text-white font-medium mb-3">Statistical Summary</h4>
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="bg-white/5 p-3 rounded-lg">
+                                <div className="text-purple-300 text-sm">Mean</div>
+                                <div className="text-white font-semibold">{distData.mean.toFixed(3)}</div>
+                              </div>
+                              <div className="bg-white/5 p-3 rounded-lg">
+                                <div className="text-purple-300 text-sm">Median</div>
+                                <div className="text-white font-semibold">{distData.median.toFixed(3)}</div>
+                              </div>
+                              <div className="bg-white/5 p-3 rounded-lg">
+                                <div className="text-purple-300 text-sm">Std Dev</div>
+                                <div className="text-white font-semibold">{distData.std.toFixed(3)}</div>
+                              </div>
+                              <div className="bg-white/5 p-3 rounded-lg">
+                                <div className="text-purple-300 text-sm">Range</div>
+                                <div className="text-white font-semibold">{(distData.max - distData.min).toFixed(3)}</div>
+                              </div>
+                            </div>
+
+                            {/* Quartiles */}
+                            <div className="bg-white/5 p-3 rounded-lg">
+                              <div className="text-purple-300 text-sm mb-2">Quartiles</div>
+                              <div className="flex justify-between text-xs text-white">
+                                <span>Q1: {distData.quartiles.q1.toFixed(2)}</span>
+                                <span>Q2: {distData.quartiles.q2.toFixed(2)}</span>
+                                <span>Q3: {distData.quartiles.q3.toFixed(2)}</span>
+                              </div>
+                            </div>
+
+                            {/* Shape Metrics */}
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="bg-white/5 p-3 rounded-lg">
+                                <div className="text-purple-300 text-sm">Skewness</div>
+                                <div className="text-white font-semibold">
+                                  {distData.skewness.toFixed(3)}
+                                  <span className={`ml-2 text-xs px-2 py-1 rounded ${
+                                    Math.abs(distData.skewness) < 0.5 ? 'bg-green-500/20 text-green-300' :
+                                    Math.abs(distData.skewness) < 1 ? 'bg-yellow-500/20 text-yellow-300' :
+                                    'bg-red-500/20 text-red-300'
+                                  }`}>
+                                    {Math.abs(distData.skewness) < 0.5 ? 'Normal' :
+                                     Math.abs(distData.skewness) < 1 ? 'Moderate' : 'High'}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="bg-white/5 p-3 rounded-lg">
+                                <div className="text-purple-300 text-sm">Kurtosis</div>
+                                <div className="text-white font-semibold">
+                                  {distData.kurtosis.toFixed(3)}
+                                  <span className={`ml-2 text-xs px-2 py-1 rounded ${
+                                    Math.abs(distData.kurtosis) < 3 ? 'bg-green-500/20 text-green-300' :
+                                    'bg-yellow-500/20 text-yellow-300'
+                                  }`}>
+                                    {Math.abs(distData.kurtosis) < 3 ? 'Normal' : 'Heavy-tailed'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Normality Test */}
+                            <div className="bg-white/5 p-3 rounded-lg">
+                              <div className="text-purple-300 text-sm">Normality Test</div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-white font-medium">
+                                  {distData.normality_test.test === 'shapiro_wilk' ? 'Shapiro-Wilk' : 'Test Failed'}
+                                </span>
+                                <div className="flex items-center">
+                                  <span className={`px-2 py-1 rounded text-xs ${
+                                    distData.normality_test.is_normal
+                                      ? 'bg-green-500/20 text-green-300'
+                                      : 'bg-red-500/20 text-red-300'
+                                  }`}>
+                                    {distData.normality_test.is_normal ? 'Normal' : 'Non-normal'}
+                                  </span>
+                                  {distData.normality_test.p_value && (
+                                    <span className="ml-2 text-xs text-purple-300">
+                                      p = {distData.normality_test.p_value.toFixed(4)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card className="glass">
+                <CardContent className="p-6 text-center">
+                  <CalculatorIcon className="w-12 h-12 text-purple-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-white mb-2">No Numeric Columns</h3>
+                  <p className="text-purple-200">No numeric columns found for distribution analysis</p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
-          <TabsContent value="correlations">
-            <Card className="glass">
-              <CardContent className="p-6 text-center">
-                <CpuChipIcon className="w-12 h-12 text-purple-400 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-white mb-2">Correlation Analysis</h3>
-                <p className="text-purple-200">Coming soon - Feature correlation matrix</p>
-              </CardContent>
-            </Card>
+          {/* Correlation Analysis Tab */}
+          <TabsContent value="correlations" className="space-y-6">
+            {analysisData.numeric_summary.correlation_matrix && Object.keys(analysisData.numeric_summary.correlation_matrix).length > 1 ? (
+              <div className="space-y-6">
+                {/* Correlation Heatmap */}
+                <Card className="glass">
+                  <CardHeader>
+                    <CardTitle className="text-white flex items-center">
+                      <CpuChipIcon className="w-5 h-5 mr-2" />
+                      Correlation Matrix Heatmap
+                    </CardTitle>
+                    <CardDescription className="text-purple-200">
+                      Pairwise correlations between numeric features
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto">
+                      <div className="min-w-max">
+                        {(() => {
+                          const corrMatrix = analysisData.numeric_summary.correlation_matrix;
+                          const columns = Object.keys(corrMatrix);
+                          return (
+                            <div className="grid gap-1" style={{ gridTemplateColumns: `120px repeat(${columns.length}, 80px)` }}>
+                              {/* Header row */}
+                              <div></div>
+                              {columns.map(col => (
+                                <div key={col} className="text-xs text-purple-300 p-2 text-center transform -rotate-45 origin-bottom-left">
+                                  {col.length > 8 ? col.substring(0, 8) + '...' : col}
+                                </div>
+                              ))}
+
+                              {/* Data rows */}
+                              {columns.map(row => (
+                                <React.Fragment key={row}>
+                                  <div className="text-xs text-purple-300 p-2 text-right pr-3">
+                                    {row.length > 15 ? row.substring(0, 15) + '...' : row}
+                                  </div>
+                                  {columns.map(col => {
+                                    const value = corrMatrix[row]?.[col] ?? 0;
+                                    const absValue = Math.abs(value);
+                                    const getColor = () => {
+                                      if (row === col) return 'bg-purple-500';
+                                      if (absValue >= 0.8) return value > 0 ? 'bg-red-500' : 'bg-blue-500';
+                                      if (absValue >= 0.6) return value > 0 ? 'bg-red-400' : 'bg-blue-400';
+                                      if (absValue >= 0.4) return value > 0 ? 'bg-red-300' : 'bg-blue-300';
+                                      if (absValue >= 0.2) return value > 0 ? 'bg-red-200' : 'bg-blue-200';
+                                      return 'bg-gray-600';
+                                    };
+
+                                    return (
+                                      <div
+                                        key={`${row}-${col}`}
+                                        className={`h-12 w-full ${getColor()} flex items-center justify-center text-xs font-medium text-white rounded`}
+                                        title={`${row} vs ${col}: ${value.toFixed(3)}`}
+                                      >
+                                        {value.toFixed(2)}
+                                      </div>
+                                    );
+                                  })}
+                                </React.Fragment>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* Legend */}
+                    <div className="mt-4 flex items-center justify-center space-x-4 text-xs">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-4 h-4 bg-red-500 rounded"></div>
+                        <span className="text-purple-300">Strong Positive</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-4 h-4 bg-red-300 rounded"></div>
+                        <span className="text-purple-300">Moderate Positive</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-4 h-4 bg-gray-600 rounded"></div>
+                        <span className="text-purple-300">Weak</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-4 h-4 bg-blue-300 rounded"></div>
+                        <span className="text-purple-300">Moderate Negative</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-4 h-4 bg-blue-500 rounded"></div>
+                        <span className="text-purple-300">Strong Negative</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Strong Correlations List */}
+                {(() => {
+                  const corrMatrix = analysisData.numeric_summary.correlation_matrix;
+                  const strongCorrelations = [];
+                  const columns = Object.keys(corrMatrix);
+
+                  for (let i = 0; i < columns.length; i++) {
+                    for (let j = i + 1; j < columns.length; j++) {
+                      const col1 = columns[i];
+                      const col2 = columns[j];
+                      const value = corrMatrix[col1]?.[col2];
+                      if (value && Math.abs(value) > 0.5) {
+                        strongCorrelations.push({
+                          col1,
+                          col2,
+                          correlation: value,
+                          strength: Math.abs(value) >= 0.8 ? 'Very Strong' :
+                                   Math.abs(value) >= 0.6 ? 'Strong' : 'Moderate'
+                        });
+                      }
+                    }
+                  }
+
+                  strongCorrelations.sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation));
+
+                  return strongCorrelations.length > 0 ? (
+                    <Card className="glass">
+                      <CardHeader>
+                        <CardTitle className="text-white flex items-center">
+                          <ChartPieIcon className="w-5 h-5 mr-2" />
+                          Strong Correlations (|r| > 0.5)
+                        </CardTitle>
+                        <CardDescription className="text-purple-200">
+                          Feature pairs with significant correlations
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          {strongCorrelations.slice(0, 10).map((corr, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
+                              <div className="flex-1">
+                                <div className="text-white font-medium">
+                                  {corr.col1} ↔ {corr.col2}
+                                </div>
+                                <div className="text-purple-300 text-sm">{corr.strength} correlation</div>
+                              </div>
+                              <div className="text-right">
+                                <div className={`text-lg font-bold ${
+                                  corr.correlation > 0 ? 'text-red-400' : 'text-blue-400'
+                                }`}>
+                                  {corr.correlation.toFixed(3)}
+                                </div>
+                                <div className="w-20 bg-gray-600 rounded-full h-2">
+                                  <div
+                                    className={`h-2 rounded-full ${
+                                      corr.correlation > 0 ? 'bg-red-400' : 'bg-blue-400'
+                                    }`}
+                                    style={{ width: `${Math.abs(corr.correlation) * 100}%` }}
+                                  ></div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : null;
+                })()}
+              </div>
+            ) : (
+              <Card className="glass">
+                <CardContent className="p-6 text-center">
+                  <CpuChipIcon className="w-12 h-12 text-purple-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-white mb-2">Insufficient Numeric Data</h3>
+                  <p className="text-purple-200">Need at least 2 numeric columns for correlation analysis</p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
-          <TabsContent value="categorical">
-            <Card className="glass">
-              <CardContent className="p-6 text-center">
-                <ChartBarIcon className="w-12 h-12 text-purple-400 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-white mb-2">Categorical Analysis</h3>
-                <p className="text-purple-200">Coming soon - Categorical data insights</p>
-              </CardContent>
-            </Card>
+          {/* Categorical Analysis Tab */}
+          <TabsContent value="categorical" className="space-y-6">
+            {Object.keys(analysisData.categorical_summary).length > 0 ? (
+              <div className="grid gap-6">
+                {Object.entries(analysisData.categorical_summary).map(([column, catData]) => (
+                  <Card key={column} className="glass">
+                    <CardHeader>
+                      <CardTitle className="text-white flex items-center">
+                        <ChartBarIcon className="w-5 h-5 mr-2" />
+                        {column} - Categorical Analysis
+                      </CardTitle>
+                      <CardDescription className="text-purple-200">
+                        Value distribution and frequency analysis
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid lg:grid-cols-2 gap-6">
+                        {/* Value Distribution Chart */}
+                        <div>
+                          <h4 className="text-white font-medium mb-3">Top Values Distribution</h4>
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart
+                                data={Object.entries(catData.top_values).map(([value, count]) => ({
+                                  value: value.length > 15 ? value.substring(0, 15) + '...' : value,
+                                  fullValue: value,
+                                  count: count,
+                                  percentage: ((count / Object.values(catData.top_values).reduce((a, b) => a + b, 0)) * 100).toFixed(1)
+                                }))}
+                                layout="horizontal"
+                              >
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                                <XAxis
+                                  type="number"
+                                  stroke="#e2e8f0"
+                                  fontSize={12}
+                                />
+                                <YAxis
+                                  type="category"
+                                  dataKey="value"
+                                  stroke="#e2e8f0"
+                                  fontSize={12}
+                                  width={100}
+                                />
+                                <Tooltip
+                                  contentStyle={{
+                                    backgroundColor: 'rgba(0,0,0,0.8)',
+                                    border: '1px solid rgba(139,92,246,0.3)',
+                                    borderRadius: '8px',
+                                    color: 'white'
+                                  }}
+                                  formatter={(value, name, props) => [
+                                    `${value} occurrences (${props.payload.percentage}%)`,
+                                    props.payload.fullValue
+                                  ]}
+                                />
+                                <Bar dataKey="count" fill={COLORS.charts[1]} radius={[0, 4, 4, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* Statistics Summary */}
+                        <div>
+                          <h4 className="text-white font-medium mb-3">Category Statistics</h4>
+                          <div className="space-y-4">
+                            {/* Key Metrics */}
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="bg-white/5 p-4 rounded-lg">
+                                <div className="text-purple-300 text-sm">Unique Values</div>
+                                <div className="text-white text-2xl font-bold">{catData.unique_count}</div>
+                                <div className="text-purple-400 text-xs">
+                                  {catData.unique_percentage.toFixed(1)}% of total
+                                </div>
+                              </div>
+                              <div className="bg-white/5 p-4 rounded-lg">
+                                <div className="text-purple-300 text-sm">Most Frequent</div>
+                                <div className="text-white text-lg font-semibold truncate" title={catData.mode}>
+                                  {catData.mode || 'N/A'}
+                                </div>
+                                <div className="text-purple-400 text-xs">Mode value</div>
+                              </div>
+                            </div>
+
+                            {/* Cardinality Assessment */}
+                            <div className="bg-white/5 p-4 rounded-lg">
+                              <div className="text-purple-300 text-sm mb-2">Cardinality Assessment</div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-white font-medium">
+                                  {catData.unique_percentage > 90 ? 'Very High' :
+                                   catData.unique_percentage > 50 ? 'High' :
+                                   catData.unique_percentage > 20 ? 'Medium' : 'Low'}
+                                </span>
+                                <span className={`px-3 py-1 rounded text-xs ${
+                                  catData.unique_percentage > 90 ? 'bg-red-500/20 text-red-300' :
+                                  catData.unique_percentage > 50 ? 'bg-yellow-500/20 text-yellow-300' :
+                                  catData.unique_percentage > 20 ? 'bg-blue-500/20 text-blue-300' :
+                                  'bg-green-500/20 text-green-300'
+                                }`}>
+                                  {catData.unique_percentage > 90 ? 'Consider ID column' :
+                                   catData.unique_percentage > 50 ? 'High diversity' :
+                                   catData.unique_percentage > 20 ? 'Good for analysis' : 'Low diversity'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Top Values List */}
+                            <div className="bg-white/5 p-4 rounded-lg">
+                              <div className="text-purple-300 text-sm mb-3">Top Values Breakdown</div>
+                              <div className="space-y-2 max-h-32 overflow-y-auto">
+                                {Object.entries(catData.top_values).slice(0, 5).map(([value, count]) => {
+                                  const total = Object.values(catData.top_values).reduce((a, b) => a + b, 0);
+                                  const percentage = ((count / total) * 100).toFixed(1);
+                                  return (
+                                    <div key={value} className="flex items-center justify-between text-sm">
+                                      <span className="text-white truncate flex-1 mr-2" title={value}>
+                                        {value.length > 20 ? value.substring(0, 20) + '...' : value}
+                                      </span>
+                                      <div className="flex items-center space-x-2">
+                                        <span className="text-purple-300">{count}</span>
+                                        <span className="text-purple-400 text-xs">({percentage}%)</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card className="glass">
+                <CardContent className="p-6 text-center">
+                  <ChartBarIcon className="w-12 h-12 text-purple-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-white mb-2">No Categorical Columns</h3>
+                  <p className="text-purple-200">No categorical columns found for analysis</p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="insights">

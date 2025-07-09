@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
+import { useAuthRedirect } from '@/hooks/useAuthRedirect'
 import { Button } from '@/components/ui/button'
 import { 
   Home, 
@@ -51,6 +52,7 @@ const navigation: NavigationItem[] = [
 export default function Navigation() {
   const pathname = usePathname()
   const { user, isAuthenticated, logout } = useAuth()
+  const { handleAuthRedirect } = useAuthRedirect()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const isCurrentPath = (href: string) => {
@@ -89,6 +91,41 @@ export default function Navigation() {
               {filteredNavigation.map((item) => {
                 const Icon = item.icon
                 const isActive = isCurrentPath(item.href)
+
+                // Handle Upload link with auth redirect
+                if (item.name === 'Upload') {
+                  return (
+                    <button
+                      key={item.name}
+                      onClick={() => handleAuthRedirect(item.href)}
+                      className={`group relative flex items-center space-x-2 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-300 transform hover:scale-105 ${
+                        isActive
+                          ? 'bg-gradient-to-r from-purple-500/20 to-blue-500/20 text-white shadow-lg shadow-purple-500/25 border border-purple-500/30'
+                          : 'text-gray-300 hover:text-white hover:bg-white/10 hover:shadow-lg hover:shadow-white/10'
+                      }`}
+                    >
+                      {/* Background glow effect */}
+                      <div className={`absolute inset-0 rounded-xl transition-opacity duration-300 ${
+                        isActive
+                          ? 'bg-gradient-to-r from-purple-500/10 to-blue-500/10 opacity-100'
+                          : 'bg-white/5 opacity-0 group-hover:opacity-100'
+                      }`}></div>
+
+                      {/* Icon */}
+                      <div className="relative z-10">
+                        <Icon className="h-4 w-4" />
+                      </div>
+
+                      {/* Text */}
+                      <span className="relative z-10">{item.name}</span>
+
+                      {/* Hover indicator */}
+                      <div className={`absolute bottom-0 left-1/2 transform -translate-x-1/2 w-0 h-0.5 bg-gradient-to-r from-purple-400 to-blue-400 transition-all duration-300 ${
+                        isActive ? 'w-full' : 'group-hover:w-full'
+                      }`}></div>
+                    </button>
+                  )
+                }
 
                 return (
                   <Link
@@ -213,6 +250,57 @@ export default function Navigation() {
                 {filteredNavigation.map((item, index) => {
                   const Icon = item.icon
                   const isActive = isCurrentPath(item.href)
+
+                  // Handle Upload link with auth redirect for mobile
+                  if (item.name === 'Upload') {
+                    return (
+                      <button
+                        key={item.name}
+                        onClick={() => {
+                          setMobileMenuOpen(false)
+                          handleAuthRedirect(item.href)
+                        }}
+                        className={`group relative flex items-center space-x-4 px-4 py-4 rounded-xl text-sm font-medium transition-all duration-300 transform hover:scale-[1.02] w-full ${
+                          isActive
+                            ? 'bg-gradient-to-r from-purple-500/20 to-blue-500/20 text-white shadow-lg shadow-purple-500/25 border border-purple-500/30'
+                            : 'text-gray-300 hover:text-white hover:bg-white/10 hover:shadow-lg hover:shadow-white/10'
+                        }`}
+                        style={{ animationDelay: `${index * 50}ms` }}
+                      >
+                        {/* Background glow effect */}
+                        <div className={`absolute inset-0 rounded-xl transition-opacity duration-300 ${
+                          isActive
+                            ? 'bg-gradient-to-r from-purple-500/10 to-blue-500/10 opacity-100'
+                            : 'bg-white/5 opacity-0 group-hover:opacity-100'
+                        }`}></div>
+
+                        {/* Content */}
+                        <div className="relative flex items-center space-x-4 w-full">
+                          <div className={`p-2 rounded-lg transition-all duration-300 ${
+                            isActive
+                              ? 'bg-purple-500/20 text-purple-300'
+                              : 'bg-white/10 text-gray-400 group-hover:bg-purple-500/20 group-hover:text-purple-300'
+                          }`}>
+                            <Icon className="h-5 w-5" />
+                          </div>
+
+                          <div className="flex-1">
+                            <div className="font-medium">{item.name}</div>
+                            <div className="text-xs text-gray-400 group-hover:text-gray-300 transition-colors">
+                              {item.description}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Active indicator */}
+                        <div className={`absolute right-2 w-2 h-2 rounded-full transition-all duration-300 ${
+                          isActive
+                            ? 'bg-purple-400 scale-100'
+                            : 'bg-transparent scale-0 group-hover:bg-purple-400/50 group-hover:scale-100'
+                        }`}></div>
+                      </button>
+                    )
+                  }
 
                   return (
                     <Link
