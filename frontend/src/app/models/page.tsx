@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
 import { apiService } from "@/lib/api"
+import ProtectedRoute from "@/components/ProtectedRoute"
 
 interface ModelInfo {
   model_id: string
@@ -30,7 +31,7 @@ interface ModelInfo {
   feature_count: number
 }
 
-export default function ModelsPage() {
+function ModelsPageContent() {
   const [models, setModels] = useState<ModelInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -215,5 +216,13 @@ export default function ModelsPage() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function ModelsPage() {
+  return (
+    <ProtectedRoute>
+      <ModelsPageContent />
+    </ProtectedRoute>
   )
 }

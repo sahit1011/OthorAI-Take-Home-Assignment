@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge"
 import { ArrowLeftIcon, SparklesIcon, ExclamationTriangleIcon, DocumentArrowUpIcon, TableCellsIcon } from "@heroicons/react/24/outline"
 import { toast } from "sonner"
 import { apiService } from "@/lib/api"
+import { useAuth } from "@/contexts/AuthContext"
+import ProtectedRoute from "@/components/ProtectedRoute"
 
 interface PredictionInput {
   [key: string]: string | number
@@ -28,7 +30,7 @@ interface ModelInfo {
   accuracy: number
 }
 
-export default function PredictPage({ params, searchParams }: {
+function PredictPageContent({ params, searchParams }: {
   params: Promise<{ model: string }>
   searchParams?: Promise<{ model_id?: string; session_id?: string }>
 }) {
@@ -45,51 +47,142 @@ export default function PredictPage({ params, searchParams }: {
   const [predicting, setPredicting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const modelId = resolvedSearchParams?.model_id || 'default'
+  const modelId = resolvedSearchParams?.model_id || resolvedParams.model
   const sessionId = resolvedSearchParams?.session_id || resolvedParams.model
 
   useEffect(() => {
-    loadModelInfo(modelId, sessionId)
+    // Only load model info if we have a valid model ID
+    if (modelId && modelId !== 'default') {
+      loadModelInfo(modelId, sessionId)
+    } else {
+      // If no valid model ID, try to load available models and use the first one
+      loadAvailableModelsAndSelectFirst()
+    }
   }, [modelId, sessionId])
+
+  const loadAvailableModelsAndSelectFirst = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const data = await apiService.getAvailableModels()
+
+      if (data.models && data.models.length > 0) {
+        const firstModel = data.models[0]
+        // Redirect to the first available model
+        router.push(`/predict/${firstModel.model_id}?model_id=${firstModel.model_id}`)
+      } else {
+        setError('No trained models available. Please train a model first.')
+        setLoading(false)
+      }
+    } catch (err: any) {
+      console.error('Error loading available models:', err)
+      setError('No model ID provided and failed to load available models. Please select a model from the models page.')
+      setLoading(false)
+    }
+  }
 
   const loadModelInfo = async (modelId: string, sessionId: string) => {
     try {
       setLoading(true)
       setError(null)
 
-      const profileData = await apiService.getDataProfile(sessionId)
+      // Use the proper model info endpoint instead of trying to reconstruct from data profile
+      const modelData = await apiService.getModelInfo(modelId)
 
-      const allColumns = Object.keys(profileData.column_profiles || {})
-      const potentialTargets = allColumns.filter(col =>
-        col.toLowerCase().includes('target') ||
-        col.toLowerCase().includes('label') ||
-        col.toLowerCase().includes('class')
-      )
-
-      const targetColumn = potentialTargets[0] || 'target'
-      const features = allColumns.filter(col => col !== targetColumn)
+      const features = modelData.features?.all_features || []
 
       const modelInfo: ModelInfo = {
         model_id: modelId,
-        algorithm: 'Random Forest',
+        algorithm: modelData.algorithm || 'Unknown',
         features: features,
-        accuracy: 0.95
+        accuracy: 0.95 // This could be extracted from model metadata if available
       }
 
       setModelInfo(modelInfo)
 
+      // Initialize input data for all features
       const initialInput: PredictionInput = {}
       features.forEach((feature: string) => {
         initialInput[feature] = ''
       })
       setInputData(initialInput)
 
-      toast.success('Model loaded successfully!')
+      toast.success(`Model loaded successfully! Algorithm: ${modelData.algorithm}`)
     } catch (err: any) {
       console.error('Error loading model info:', err)
-      const errorMessage = err.response?.data?.detail?.message || 'Failed to load model information'
-      setError(errorMessage)
-      toast.error(errorMessage)
+      console.error('Error details:', {
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data,
+        message: err.message
+      })
+
+      // Check if it's an authentication error
+      if (err.response?.status === 401) {
+        setError('Authentication required. Please log in to access model information.')
+        toast.error('Please log in to access this model')
+        // Redirect to login page
+        router.push('/auth/login')
+        return
+      }
+
+      // Check if it's a model not found error
+      if (err.response?.status === 404) {
+        setError(`Model ${modelId} not found. The model may have been deleted or the ID is incorrect.`)
+        toast.error('Model not found')
+        // Try to redirect to models page after a delay
+        setTimeout(() => {
+          router.push('/models')
+        }, 2000)
+        return
+      }
+
+      // For other errors, try to fall back to session-based approach for backward compatibility
+      console.log('Falling back to session-based data profile approach...')
+      try {
+        const profileData = await apiService.getDataProfile(sessionId)
+
+        const allColumns = Object.keys(profileData.column_profiles || {})
+        const potentialTargets = allColumns.filter(col =>
+          col.toLowerCase().includes('target') ||
+          col.toLowerCase().includes('label') ||
+          col.toLowerCase().includes('class')
+        )
+
+        const targetColumn = potentialTargets[0] || 'target'
+        const features = allColumns.filter(col => col !== targetColumn)
+
+        const modelInfo: ModelInfo = {
+          model_id: modelId,
+          algorithm: 'Unknown',
+          features: features,
+          accuracy: 0.95
+        }
+
+        setModelInfo(modelInfo)
+
+        const initialInput: PredictionInput = {}
+        features.forEach((feature: string) => {
+          initialInput[feature] = ''
+        })
+        setInputData(initialInput)
+
+        toast.success('Model loaded successfully (fallback method)!')
+      } catch (fallbackErr: any) {
+        console.error('Fallback method also failed:', fallbackErr)
+        console.error('Fallback error details:', {
+          status: fallbackErr.response?.status,
+          data: fallbackErr.response?.data,
+          message: fallbackErr.message
+        })
+
+        const errorMessage = err.response?.data?.detail?.message ||
+                            fallbackErr.response?.data?.detail?.message ||
+                            'Failed to load model information. Please check if you are logged in and the model exists.'
+        setError(errorMessage)
+        toast.error(errorMessage)
+      }
     } finally {
       setLoading(false)
     }
@@ -124,7 +217,26 @@ export default function PredictPage({ params, searchParams }: {
       }
     } catch (err: any) {
       console.error('Prediction error:', err)
-      const errorMessage = err.response?.data?.detail?.message || 'Prediction failed. Please try again.'
+
+      // Handle authentication errors
+      if (err.response?.status === 401) {
+        toast.error('Please log in to make predictions')
+        router.push('/auth/login')
+        return
+      }
+
+      // Handle model not found errors
+      if (err.response?.status === 404) {
+        toast.error('Model not found. Redirecting to models page...')
+        setTimeout(() => {
+          router.push('/models')
+        }, 2000)
+        return
+      }
+
+      const errorMessage = err.response?.data?.detail?.message ||
+                          err.response?.data?.message ||
+                          'Prediction failed. Please try again.'
       toast.error(errorMessage)
     } finally {
       setPredicting(false)
@@ -209,9 +321,17 @@ export default function PredictPage({ params, searchParams }: {
           <ExclamationTriangleIcon className="w-16 h-16 text-red-400 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-white mb-4">Model Load Failed</h2>
           <p className="text-red-300 mb-6">{error}</p>
-          <Button asChild>
-            <Link href="/upload">Start Over</Link>
-          </Button>
+          <div className="space-y-3">
+            <Button asChild className="w-full">
+              <Link href="/models">View Available Models</Link>
+            </Button>
+            <Button asChild variant="outline" className="w-full">
+              <Link href="/upload">Upload New Data</Link>
+            </Button>
+            <Button asChild variant="ghost" className="w-full">
+              <Link href="/auth/login">Login</Link>
+            </Button>
+          </div>
         </div>
       </div>
     )
@@ -490,5 +610,16 @@ export default function PredictPage({ params, searchParams }: {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function PredictPage({ params, searchParams }: {
+  params: Promise<{ model: string }>
+  searchParams?: Promise<{ model_id?: string; session_id?: string }>
+}) {
+  return (
+    <ProtectedRoute>
+      <PredictPageContent params={params} searchParams={searchParams} />
+    </ProtectedRoute>
   )
 }

@@ -267,7 +267,10 @@ async def list_available_models() -> Dict[str, Any]:
 
 
 @router.get("/model/{model_id}/info")
-async def get_model_info(model_id: str) -> Dict[str, Any]:
+async def get_model_info(
+    model_id: str,
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Get detailed information about a specific model.
     

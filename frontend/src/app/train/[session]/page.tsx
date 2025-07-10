@@ -728,6 +728,13 @@ export default function TrainPage({ params }: { params: Promise<{ session: strin
                     </Link>
                   </Button>
 
+                  <Button asChild size="xl" variant="outline" className="group border-green-400 text-green-300 hover:bg-green-400 hover:text-white">
+                    <Link href="/history">
+                      View Training History
+                      <ArrowRightIcon className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+                    </Link>
+                  </Button>
+
                   <Button
                     variant="outline"
                     size="xl"

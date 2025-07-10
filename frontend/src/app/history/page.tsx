@@ -41,6 +41,7 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
   const [downloadingModels, setDownloadingModels] = useState<Set<string>>(new Set())
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -48,7 +49,19 @@ export default function HistoryPage() {
     }
   }, [isAuthenticated])
 
-  const loadHistoryData = async () => {
+  // Auto-refresh when page becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && isAuthenticated) {
+        loadHistoryData()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [isAuthenticated])
+
+  const loadHistoryData = async (showSuccessToast = false) => {
     try {
       setLoading(true)
       const [filesData, modelsData, statsData] = await Promise.all([
@@ -56,10 +69,21 @@ export default function HistoryPage() {
         apiService.getModelHistory({ limit: 50 }),
         apiService.getUserStats()
       ])
-      
+
+      // Check if there's new data
+      const hasNewFiles = filesData.length > files.length
+      const hasNewModels = modelsData.length > models.length
+
       setFiles(filesData)
       setModels(modelsData)
       setStats(statsData)
+      setLastRefresh(new Date())
+
+      if (showSuccessToast) {
+        toast.success('History data refreshed successfully!')
+      } else if (hasNewFiles || hasNewModels) {
+        toast.success(`New ${hasNewFiles ? 'files' : ''}${hasNewFiles && hasNewModels ? ' and ' : ''}${hasNewModels ? 'models' : ''} detected!`)
+      }
     } catch (error) {
       console.error('Error loading history:', error)
       toast.error('Failed to load history data')
@@ -167,9 +191,37 @@ export default function HistoryPage() {
             <h1 className="text-5xl md:text-6xl font-bold text-white mb-4">
               Welcome back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">{user?.full_name || user?.username}</span>! 👋
             </h1>
-            <p className="text-xl text-purple-200 max-w-2xl mx-auto">
+            <p className="text-xl text-purple-200 max-w-2xl mx-auto mb-6">
               Your AI-powered data science journey continues. Explore your models, analyze your progress, and unlock new insights.
             </p>
+
+            {/* Refresh Button */}
+            <Button
+              onClick={() => loadHistoryData(true)}
+              disabled={loading}
+              variant="outline"
+              size="lg"
+              className="border-purple-400 text-purple-300 hover:bg-purple-400 hover:text-white disabled:opacity-50"
+            >
+              {loading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Refreshing...
+                </>
+              ) : (
+                <>
+                  <Activity className="w-4 h-4 mr-2" />
+                  Refresh Data
+                </>
+              )}
+            </Button>
+
+            {/* Last Refresh Timestamp */}
+            {lastRefresh && (
+              <p className="text-sm text-purple-300 mt-2">
+                Last updated: {formatDistanceToNow(lastRefresh, { addSuffix: true })}
+              </p>
+            )}
           </motion.div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
